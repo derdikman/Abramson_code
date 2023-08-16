@@ -1,6 +1,6 @@
 library(ggplot2)
 # Read the data
-Data = read.csv('AllFinalResultsOnset+5sec_200msec_bins.csv')
+Data = read.csv('G:/Dropbox (Personal)/Brain/Project/Paper/DataForPaper/ForR.csv')
 
 # Aggregate all experiments CellType-metrics at each session type and cell type , calculating the mean,min,max and sem
 myData <- aggregate(Data$ByCellType,

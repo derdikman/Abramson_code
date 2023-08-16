@@ -3,8 +3,11 @@
 % Generate figures and data summary (R)
 % Author : Shai Abramson Jan/2021
 %
+%
+%
+%
 % R legend :
-% --------- 
+% ---------
 % Total runs
 % Valid runs
 % Valid Runs Left Turns
@@ -13,6 +16,7 @@
 % Fit Distance
 % RMS
 % Mean Time
+% Max Onset Time
 % Mean Distance
 % Max Onsset Distance
 % Sum of Absolute residuals,
@@ -30,20 +34,27 @@
 % Error of distance, times Speed (Time vs 1/Velocity)
 % Err Slope
 % R^2 Error
-% P Error, 
-% PeakFiringRate Low speed
-% PeakFiringRate Medium speed
-% PeakFiringRate High speed
-
+% P Error,
+% PeakTimeFiringRate Low speed
+% PeakTimeFiringRate Medium speed
+% PeakTimeFiringRate High speed%
+% PeakDistanceFiringRate Low speed
+% PeakDistanceFiringRate Medium speed
+% PeakDistanceFiringRate High speed
 %_______________________________________________________________________
 
-function [R] = NeuronFiringTimeVsDistance(filename,Neuron)
+function R = NeuronFiringTimeVsDistance(filename,Neuron,TotalCol,Col)
 warning('off');
 
 tmp=load(strcat(filename,'.mat')); % Load the data
 fn = fieldnames(tmp);
 FirstVar = fn{1};
 s = tmp.(FirstVar);
+
+if nargin==2
+    TotalCol=1;
+    Col=1;
+end
 
 disp('')
 
@@ -53,28 +64,36 @@ TimeResolutionHR = 0.1; % sec , the figures binning resolution
 DistanceResolution = TimeResolution*20; % cm
 DistanceResolutionHR = TimeResolutionHR*20; % cm
 
+MaxTimeToAnalyze = 40; % Maximum time to analyze from treadmill start (excluding the ExtraTime defined below)
+ExtraTime = 5; % Additional time to analyze after the treadmill stops
+
+FirstLast = 0; % 0=all, 1=analyze first 10 runs only 2=ana;yze 10 last runs only
+
+% Use the following for the shuffle , so all runs are aligned to 16sec
+% MaxTimeToAnalyze = 16; % Maximum time to analyze from treadmill start (excluding the ExtraTime defined below)
+% ExtraTime = 0; % Additional time to analyze after the treadmill stops
+
 VelocityGroups = 3; % number of velocity groups
 Vres = 5; % Velocity resolution on the raster image (10 == 0.1 cm/sec resolution)
 
 % *************************************************************************************
 minValidRuns = 10; % Minimum valid runs required for analysis
-minPeak = 1; % Hz, min tuning curve peak firing frequency
+minPeak = 0.5; % Hz, min tuning curve peak firing frequency
 minRate = 1; % Hz, min firing rate required for the 'first burst' search option
 minSilence = 1; % Sec, min required silent period before onset
-minPeakLocation = 2; % Sec, Generate figures only if tuning curve peak exceed this value
-ExtraTime = 5; % Additional time to analyze after the treadmill stops
+minPeakLocation = 1; % Sec, Generate figures only if tuning curve peak exceed this value
 ShowPath = 0; % 0 -do not show path, 1 -Show the path
 ShowPks = 0; % 0 -do not show, 1 -show the peaks values on the tuning curves
 TurnType = 'B'; % The turn type to analyze, R(ight), L(eft) or B(both)
 FigureFormat = 3; % 1- Including heat map, 2-Analyze 3-Paper 4- none
 
 FigureType = '.bmp'; % use .epsc for high quality
-OnsetType = 2; % 1- First burst, 2- minSilence before peak bin 3-max 
+OnsetType = 2; % 1- First burst, 2- minSilence before peak bin, 3-max
 Shuffle = 0; % 0- no shuffle, 1 - Randomly shift cyclicly each run
 simTimeCellSigma = 2; % Simulated time Cell sigma (sec)
 Simulate = 0; % 0-none 1-simulate as Time cell 2- simulate as Distance cell
 
-Titles = false; % Titles for figures
+Titles = true; % Titles for figures
 TrialTitle = false; % Information about the trail and neuron
 FntSize = 14; % Font size
 NumFntSize = 12; % numbers Font size
@@ -85,14 +104,14 @@ NumFntSize = 12; % numbers Font size
 
 fprintf(2,'TM+%d minValidRuns=%d Format=%d OnsetType=%d minSilence=%d Simulate=%d \n',ExtraTime,minValidRuns,FigureFormat,OnsetType,minSilence,Simulate);
 
-MxTime = 40; % Max time span
-MxDistance = 1200;% Max distance span
+MxTime = 50; % Max time span
+MxDistance = 1500;% Max distance span
 
-MaxTime = round(MxTime/TimeResolution);  
-MaxDistance = round(MxDistance/DistanceResolution);  
+MaxTime = round(MxTime/TimeResolution);
+MaxDistance = round(MxDistance/DistanceResolution);
 
-MaxTimeHR = round(MxTime/TimeResolutionHR);  
-MaxDistanceHR = round(MxDistance/DistanceResolutionHR);  
+MaxTimeHR = round(MxTime/TimeResolutionHR);
+MaxDistanceHR = round(MxDistance/DistanceResolutionHR);
 
 NumberOfNeurons = size(s.neurons,1);
 FiringNeuronCnt = 0; % Counter of Firing neurons
@@ -106,7 +125,7 @@ else % Run a specific neuron
     nStop=Neuron;
 end
 
-% Iniitiate vectors
+% Initialize vectors
 TRuns(1:nStop)=0;
 VRuns(1:nStop)=0;
 ValidRunsLeftTurns(1:nStop)=0;
@@ -134,9 +153,13 @@ Et_T_RVxSpeed(1:nStop)=0;
 ErrSlope(1:nStop)=0;
 R2Err(1:nStop)=0;
 PErr(1:nStop)=0;
-PeakFiringRateL(1:nStop)=0;
-PeakFiringRateM(1:nStop)=0;
-PeakFiringRateH(1:nStop)=0;
+PeakTimeFiringRateL(1:nStop)=0;
+PeakTimeFiringRateM(1:nStop)=0;
+PeakTimeFiringRateH(1:nStop)=0;
+PeakDistanceFiringRateL(1:nStop)=0;
+PeakDistanceFiringRateM(1:nStop)=0;
+PeakDistanceFiringRateH(1:nStop)=0;
+Spk = []';
 
 for n=nStart:nStop % Run through all neurons
     unit = s.neurons{n};
@@ -158,15 +181,15 @@ for n=nStart:nStop % Run through all neurons
     else
         SessionType=2; % Timed session
     end
-       
+    
     pT = s.path(:,1); % Path timestamp
     pX = s.path(:,2); % Path X coordinate
     pY = s.path(:,3);  % Path Y coordinate;
     pV = s.vel(:); % Path velocity
     
-    if FigureFormat~=4 % If figures are reqested
-        figure(1);
-        clf;
+    if FigureFormat~=4 % If figures are requested
+        fig = figure(1);
+        %         clf;
         if TrialTitle
             sgtitle(strcat('Trial : ',filename,' Neuron# : ',int2str(n)),'Color','blue','FontSize',16);
         end
@@ -191,15 +214,15 @@ for n=nStart:nStop % Run through all neurons
         end
     end
     
-    if FigureFormat~=4        
+    if FigureFormat~=4
         % Draw the path of all trials
         figure(1);
         if ShowPath == 1
             ax = subplot(4,3,3); % Draw all trials path
             scatter(pX,pY,'.','black');
             title("\fontsize{"+num2str(FntSize)+"}Firing pos while and post treadmill");
-            xlabel('\fontsize{'+num2str(FntSize)+'}Cm');
-            ylabel('\fontsize{'+num2str(FntSize)+'}cm');
+            xlabel("\fontsize{"+num2str(FntSize)+"}Cm");
+            ylabel("\fontsize{"+num2str(FntSize)+"}cm");
             hold on;
             
             ptWithinTimeSlot = (pT>=0) & (pT<=1000000);  % During all runs
@@ -231,18 +254,19 @@ for n=nStart:nStop % Run through all neurons
         if FieldCenter<1
             FieldCenter = 1;
         end
-    end 
+    end
     if Simulate==2 % Distance cell simulation
         FieldCenter = normrnd(600,200); % Normal distribution around 600mm
         if FieldCenter<50
             FieldCenter = 50;
         end
     end
+    
     for i=1:Runs  %Setup a vector with the firing rates on the treadmill, for each session
         start = tm.start(i);
-        stop = tm.stop(i);
+        stop = min(tm.start(i)+MaxTimeToAnalyze,tm.stop(i));
         AnalysisPeriod = stop-start+ExtraTime;
-        tmWithinTimeSlot = (ts>=start) & (ts<=stop+ExtraTime);  
+        tmWithinTimeSlot = (ts>=start) & (ts<=stop+ExtraTime);
         tmFiringTime = (ts(tmWithinTimeSlot)-start); % Vector of firing times on the treadmill
         
         
@@ -257,39 +281,57 @@ for n=nStart:nStop % Run through all neurons
         end
         
         tmFiringTime = tmFiringTime(tmFiringTime<AnalysisPeriod);
+        tmOFiringTime = tmFiringTime;
         if size(tmFiringTime,1) == 0
             tmFiringTime(1)=0.1;
-        end
-              
-        if Shuffle == 1
-            Shift = random('Uniform',0,AnalysisPeriod); % Time shift in case of Shuffle, randomed uniformly from the range 0:AnalysisPeriod
-            tmFiringTime(i) = mod(tmFiringTime + Shift, AnalysisPeriod);
+        else
+            if Shuffle == 1
+                Shift = random('Uniform',0,AnalysisPeriod); % Time shift in case of Shuffle, randomed uniformly from the range 0:AnalysisPeriod
+                tmFiringTime = mod(tmFiringTime + Shift, AnalysisPeriod);
+            end
         end
         
         tmAllFiringTime{i} = tmFiringTime;
-        tmFiringDistance = tmFiringTime*tm.Speed(i); % vector of firing distances on the treadmill     
-
+        tmOAllFiringTime{i} = tmOFiringTime;
+        tmFiringDistance = tmFiringTime*tm.Speed(i); % vector of firing distances on the treadmill
+        tmOFiringDistance = tmOFiringTime*tm.Speed(i); % vector of firing distances on the treadmill
+        
         tmFiringRatePerTime=accumarray(round(tmFiringTime/TimeResolution+1),1); % bining by time
+        tmOFiringRatePerTime=accumarray(round(tmOFiringTime/TimeResolution+1),1); % bining by time
         tmFiringRatePerTimeHR=accumarray(round(tmFiringTime/TimeResolutionHR+1),1); % bining by time, high resolution
         
         tmFiringRatePerDistance=accumarray(round(tmFiringDistance/DistanceResolution+1),1); % bining by distance
+        tmOFiringRatePerDistance=accumarray(round(tmOFiringDistance/DistanceResolution+1),1); % bining by distance
         tmFiringRatePerDistanceHR=accumarray(round(tmFiringDistance/DistanceResolutionHR+1),1); % bining by distance, high resolution
         
         tmRunSizeTime=size(tmFiringRatePerTime,1);
+        tmORunSizeTime=size(tmOFiringRatePerTime,1);
         tmRunSizeDistance=size(tmFiringRatePerDistance,1);
+        tmORunSizeDistance=size(tmOFiringRatePerDistance,1);
         tmRunSizeTimeHR=size(tmFiringRatePerTimeHR,1);
         tmRunSizeDistanceHR=size(tmFiringRatePerDistanceHR,1);
         
+        % Spikes statistics
+        Spk(n,i).Total = sum(tmFiringRatePerTime);
+        Spk(n,i).Avg = mean(tmFiringRatePerTime)/TimeResolution; % in Hz
+        Spk(n,i).Peak = max(tmFiringRatePerTime)/TimeResolution; % in Hz
+        
         % Save all vectors for this neuron
         FiringRunCnt = FiringRunCnt + 1;
+        
+        if length(zeros(MaxTime-tmRunSizeTime,1))==0
+            disp('k');
+        end
         AllFiringTime(FiringRunCnt,:) = [tmFiringRatePerTime;zeros(MaxTime-tmRunSizeTime,1)]; % Collect all firing time vectors
+        AllOFiringTime(FiringRunCnt,:) = [tmOFiringRatePerTime;zeros(MaxTime-tmORunSizeTime,1)]; % Collect all firing time vectors
         AllFiringDistance(FiringRunCnt,:) = [tmFiringRatePerDistance;zeros(MaxDistance-tmRunSizeDistance,1)]; % Collect all firing distance vectors
+        AllOFiringDistance(FiringRunCnt,:) = [tmOFiringRatePerDistance;zeros(MaxDistance-tmORunSizeDistance,1)]; % Collect all firing distance vectors
         
         AllFiringTimeHR(FiringRunCnt,:) = [tmFiringRatePerTimeHR;zeros(MaxTimeHR-tmRunSizeTimeHR,1)]; % Collect all firing time vectors
         AllFiringDistanceHR(FiringRunCnt,:) = [tmFiringRatePerDistanceHR;zeros(MaxDistanceHR-tmRunSizeDistanceHR,1)]; % Collect all firing distance vectors
-               
+        
         % Color the positions of the firings on the TM and after the TM
-        if FigureFormat~=4
+        if FigureFormat<3
             figure(1);
             ax = subplot(4,3,3);
         end
@@ -307,7 +349,8 @@ for n=nStart:nStop % Run through all neurons
             axis([0 1000 0 1000]);
         end
     end
-      
+    
+    
     hold off;
     
     [~,SpeedOrder] = sort(tm.Speed); % Sort the tm speeds vector
@@ -315,49 +358,79 @@ for n=nStart:nStop % Run through all neurons
     SortedAllFiringTime = AllFiringTime(SpeedOrder,:); % sort the firing vectors according to the speeds vector
     SortedAllFiringDistance = AllFiringDistance(SpeedOrder,:);
     
+    figure(2);
+    
+    if Shuffle == 1
+        subplot(2,2,3);
+        imagesc(AllFiringTime);
+        xlabel('Time bins')
+        title('Shuffeled data');
+        subplot(2,2,4);
+        imagesc(AllFiringDistance);
+        xlabel('Distance bins')
+        title('Shuffeled data');
+    end
+    if Shuffle == 1
+        subplot(2,2,1);
+    else
+        subplot(1,2,1);
+    end
+    imagesc(AllOFiringTime);
+    xlabel('Time bins')
+    title('Original data');
+    if Shuffle == 1
+        subplot(2,2,2);
+    else
+        subplot(1,2,2);
+    end
+    imagesc(AllOFiringDistance);
+    xlabel('Distance bins')
+    title('Original data');
+    sgtitle([filename '-' num2str(n)]);
+    fig=figure(1);
+    
     SortedAllFiringTimeHR = AllFiringTimeHR(SpeedOrder,:); % sort the firing vectors according to the speeds vector
     SortedAllFiringDistanceHR = AllFiringDistanceHR(SpeedOrder,:);
     
     Onset = SortedAllFiringTime>=minRate; % Map of all bursts exceeding minRate threshold
     FirstOnset = zeros(size(Onset));
-         
+    
     % Calculate tuning curve per speed group
     for u=1:VelocityGroups
         NormalizationFactor = VelocityGroups/Runs/TimeResolution; % The averaging factor (number of runs in every velocity group) times the bin width (Time Resolution)
-        FiringTimePerSpeedGroups1(u,:) = smoothdata(sum(SortedAllFiringTime(round(1+(u-1)/VelocityGroups*Runs):round(u*Runs/VelocityGroups),:))*NormalizationFactor);
-        FiringTimePerSpeedGroups(u,:) = smoothdata(FiringTimePerSpeedGroups1(u,:));
-        FiringDistancePerSpeedGroups1(u,:) = smoothdata(sum(SortedAllFiringDistance(round(1+(u-1)/VelocityGroups*Runs):round(u*Runs/VelocityGroups),:))*NormalizationFactor);
-        FiringDistancePerSpeedGroups(u,:) = smoothdata(FiringDistancePerSpeedGroups1(u,:));
+        FiringTimePerSpeedGroups1(u,:) = smoothdata(sum(SortedAllFiringTime(round(1+(u-1)/VelocityGroups*Runs):round(u*Runs/VelocityGroups),:))*NormalizationFactor,"gaussian");
+        FiringTimePerSpeedGroups(u,:) = smoothdata(FiringTimePerSpeedGroups1(u,:),"gaussian",100);
+        % Find bin peak with minimum minPeak , min width of 3 bins (width is at 3db points) and a seperation of 10 bins
+        FiringTimePerSpeedGroups(u,1) = 0; %Set the first point to 0 so that findpeaks can detect a peak at the start
+        [pksT{u},plocsT{u}] = findpeaks(FiringTimePerSpeedGroups(u,:),'MinPeakHeight',minPeak,'MinPeakWidth',3,'MinPeakDistance',2,'NPeaks',2);
+        NpksT(u) = numel(pksT{u}); % Number of peaks
+        
+        FiringDistancePerSpeedGroups1(u,:) = smoothdata(sum(SortedAllFiringDistance(round(1+(u-1)/VelocityGroups*Runs):round(u*Runs/VelocityGroups),:))*NormalizationFactor,"gaussian");
+        FiringDistancePerSpeedGroups(u,:) = smoothdata(FiringDistancePerSpeedGroups1(u,:),"gaussian",100);
+        % Find bin peak with minimum minPeak , min width of 3 bins (width is at 3db points) and a seperation of 10 bins
+        FiringDistancePerSpeedGroups(u,1) = 0; %Set the first point to 0 so that findpeaks can detect a peak at the start
+        [pksD{u},plocsD{u}] = findpeaks(FiringDistancePerSpeedGroups(u,:),'MinPeakHeight',minPeak,'MinPeakWidth',3,'MinPeakDistance',2,'NPeaks',2);
+        NpksD(u) = numel(pksD{u}); % Number of peaks
     end
     
     % Choose to find the peaks per the session type (this is particulary
     % aimed to find the post-TM peak and since it is usually a Place cell
-    % at the corridor the burst will best align per the session type
+    % at the corridor, the burst will best align per the session type)
     if SessionType == 1 % Fixed-Distance
-        pp1 = FiringDistancePerSpeedGroups(1,:);
-        pp2 = FiringDistancePerSpeedGroups(2,:);
-        pp3 = FiringDistancePerSpeedGroups(3,:);
+        Npks1 = NpksD(1);
+        Npks2 = NpksD(2);
+        Npks3 = NpksD(3);
+        plocs1 = plocsD{1};
+        plocs2 = plocsD{2};
+        plocs3 = plocsD{3};
     else % Fixed-time
-        pp1 = FiringTimePerSpeedGroups(1,:);
-        pp2 = FiringTimePerSpeedGroups(2,:);
-        pp3 = FiringTimePerSpeedGroups(3,:);
+        Npks1 = NpksT(1);
+        Npks2 = NpksT(2);
+        Npks3 = NpksT(3);
+        plocs1 = plocsT{1};
+        plocs2 = plocsT{2};
+        plocs3 = plocsT{3};
     end
-      
-    pp1(1)=0; % Set the first point to 0 so that findpeaks can detect a peak at the start
-    % Find bin peak with minimum minPeak , min width of 3 bins (width is
-    % at 3db points) and a seperation of 10 bins 
-    [pks1,plocs1] = findpeaks(pp1,'MinPeakHeight',minPeak,'MinPeakWidth',3,'MinPeakDistance',2,'NPeaks',2);
-    Npks1 = numel(pks1); % Number of peaks
-    
-
-    pp2(1)=0; % Set the first point to 0 so that findpeaks can detect a peak at the start
-    [pks2,plocs2] = findpeaks(pp2,'MinPeakHeight',minPeak,'MinPeakWidth',3,'MinPeakDistance',2,'NPeaks',2);
-    Npks2 = numel(pks2); % Number of peaks
-    
-
-    pp3(1)=0; % Set the first point to 0 so that findpeaks can detect a peak at the start
-    [pks3,plocs3] = findpeaks(pp3,'MinPeakHeight',minPeak,'MinPeakWidth',3,'MinPeakDistance',2,'NPeaks',2);
-    Npks3 = numel(pks3); % Number of peaks
     
     Npks = max([Npks1,Npks2,Npks3]); % Take the max # of peaks from the 3 velocity groups
     plocs(1)=9999;
@@ -384,15 +457,20 @@ for n=nStart:nStop % Run through all neurons
             plocs(2) = min(plocs3(2),plocs(2));
         end
     end
-
+    
     % Find the peak firing rate in each velocity group
-    [PeakFiringRate(1), PeakFiringLocation(1)]=max(FiringTimePerSpeedGroups(1,:));
-    [PeakFiringRate(2), PeakFiringLocation(2)]=max(FiringTimePerSpeedGroups(2,:));
-    [PeakFiringRate(3), PeakFiringLocation(3)]=max(FiringTimePerSpeedGroups(3,:));
+    [PeakTimeFiringRate(1), PeakTimeFiringLocation(1)]=max(FiringTimePerSpeedGroups(1,:));
+    [PeakTimeFiringRate(2), PeakTimeFiringLocation(2)]=max(FiringTimePerSpeedGroups(2,:));
+    [PeakTimeFiringRate(3), PeakTimeFiringLocation(3)]=max(FiringTimePerSpeedGroups(3,:));
     
-    minPeakLocationOfAllGroups = min(PeakFiringLocation);
+    [PeakDistanceFiringRate(1), PeakDistanceFiringLocation(1)]=max(FiringDistancePerSpeedGroups(1,:));
+    [PeakDistanceFiringRate(2), PeakDistanceFiringLocation(2)]=max(FiringDistancePerSpeedGroups(2,:));
+    [PeakDistanceFiringRate(3), PeakDistanceFiringLocation(3)]=max(FiringDistancePerSpeedGroups(3,:));
     
-    if (max(FiringTimePerSpeedGroups(:))>minPeak || max(FiringDistancePerSpeedGroups(:))>minPeak) && minPeakLocationOfAllGroups>minPeakLocation
+    
+    minPeakLocationOfAllGroups = min(PeakTimeFiringLocation);
+    
+    if (max(FiringTimePerSpeedGroups(:))>minPeak || max(FiringDistancePerSpeedGroups(:))>minPeak) && minPeakLocationOfAllGroups>=minPeakLocation
         % Calculate peaks, their positions, center of mass and width of tuning curve
         for u=1:VelocityGroups
             [PeakT(n,u), PosT(n,u)] = max(FiringTimePerSpeedGroups(u,:)); % Peaks and positions of the tuning curves
@@ -424,14 +502,14 @@ for n=nStart:nStop % Run through all neurons
         end
         
         % Find correlation between the tuning curves
-        for u=1:VelocityGroups-1 
+        for u=1:VelocityGroups-1
             [PCorT(n,u), CT] = max(conv(FiringTimePerSpeedGroups(u,:),fliplr(FiringTimePerSpeedGroups(u+1,:))));
             [PCorD(n,u), CD] = max(conv(FiringDistancePerSpeedGroups(u,:),fliplr(FiringDistancePerSpeedGroups(u+1,:))));
             CorT(n,u) = CT - size(FiringTimePerSpeedGroups,2);
             CorD(n,u) = CD - size(FiringDistancePerSpeedGroups,2);
         end
         
-        % Prepare the search range for finding the onset position       
+        % Prepare the search range for finding the onset position
         RejectCell=false;
         if Simulate == 0
             MaxTimeToAnalyzePostTM = ExtraTime; % By default analyze to the end of TM + ExtraTime
@@ -451,7 +529,7 @@ for n=nStart:nStop % Run through all neurons
             end
         end
         
-        % Find the Onset Position  
+        % Find the Onset Position
         OnSetPos(1:Runs) = 0;
         for i=1:Runs
             if MaxTimeToAnalyzePostTM>0
@@ -460,7 +538,7 @@ for n=nStart:nStop % Run through all neurons
                 MaxTimeToAnalyze = tm.stop(i)-tm.start(i);
             end
             AnalyzedTime(i) = MaxTimeToAnalyze;
-            AllFiringTimeOnTM = AllFiringTime(i,1:round(MaxTimeToAnalyze/TimeResolution)); % a vector containing only the firing time on the treadmill
+            AllFiringTimeOnTM = AllFiringTime(i,1:end); % a vector containing only the firing time on the treadmill
             if OnsetType == 3 % Find the max (not really onset, actually  max)
                 [~,MaxPos] = max(AllFiringTimeOnTM.'); % Find the peak firing on the treadmill
                 if MaxPos > 1
@@ -500,8 +578,7 @@ for n=nStart:nStop % Run through all neurons
         if size(OnSetPos,2)~=Runs
             fprintf('error n=%d \n',n);
             ValidRuns = 0;
-        else
-            % Collect only the points with the valid Onset for the linear regression
+        else    % Collect only the points with the valid Onset for the linear regression
             ValidRuns = 0;
             RejectedRuns = 0;
             clear Rx; % Valid runs index
@@ -509,8 +586,16 @@ for n=nStart:nStop % Run through all neurons
             clear Rv; % Valid runs speeds
             clear RTurns; % Valid runs Turn type (1=Left 0=Right)
             if (Npks>0) && ~RejectCell % Analyze Onsets only if a peak was detected in the tuning curve
-                for k = 1:Runs
-                    if (OnSetPos(k)~=0) 
+                kStart = 1;
+                kEnd = Runs;
+                if FirstLast==1 % Analyze only first 10 runs
+                    kEnd = 10;
+                end
+                if FirstLast==2 % Analyze only 10 last runs
+                    kStart=Runs-10;
+                end
+                for k = kStart:kEnd
+                    if (OnSetPos(k)~=0)
                         ValidRuns = ValidRuns+1;
                         Rx(ValidRuns)=k; % Store only the valid runs positions
                         Rv(ValidRuns)=tm.Speed(k); % Store the valid runs speeds
@@ -525,9 +610,8 @@ for n=nStart:nStop % Run through all neurons
         TRuns(n) = Runs;    % Total Runs
         VRuns(n) = ValidRuns/Runs; % Ratio of Valid Runs
         if ValidRuns<minValidRuns % Ignore trials with less than minValidRuns
-            fprintf('%s N=%d ValidRuns=%d (< %d) Rejected=%d \n',filename,n,ValidRuns,minValidRuns, RejectCell);
-        else      
-
+            fprintf('%s N=%d ValidRuns=%d (< %d) Rejected=%d Peaks=%d\n',filename,n,ValidRuns,minValidRuns, RejectCell,Npks);
+        else
             R = [1:Runs];
             
             V = tm.Speed(Rx).'; % Velocities of the valid runs
@@ -561,7 +645,7 @@ for n=nStart:nStop % Run through all neurons
             [fitDistTime,S] = polyfit(Time(O),Distance(O) ,1); % Linear regression between the Distance at the OnSet and its time
             [RegDistTime,] = polyval(fitDistTime,Time,S); % Estimation of distance based on time
             [RegDistTime1,] = polyval(fitDistTime,[0:MxTime],S); % Estimation of the distance based on time, entire range
-            mdlS_T = fitlm(Time,Distance); 
+            mdlS_T = fitlm(Time,Distance);
             
             [fitTimeRVel,S] = polyfit(1./V(O),Time(O),1); % Linear regression between the OnSet time and 1/velocity
             [RegTimeRVel,] = polyval(fitTimeRVel,1./V,1); % Estimation of time based on 1/velocity
@@ -577,7 +661,7 @@ for n=nStart:nStop % Run through all neurons
             end
             mdlRV_T = fitlm(Time,1./V);
             mdlT_RV = fitlm(1./V,Time);
-            eval(strcat(filename(1:4),filename(6:end),'{',int2str(n),'}.TVR=mdlT_RV;'));          
+            eval(strcat(filename(1:4),filename(6:end),'{',int2str(n),'}.TVR=mdlT_RV;'));
             
             m = mdlT_RV.Coefficients.Estimate(2); % regression coefficient
             m0 = mdlT_RV.Coefficients.Estimate(1); % regression constant
@@ -585,9 +669,9 @@ for n=nStart:nStop % Run through all neurons
             EsT_RV = sum((m./V-Time+m0).^2);
             EtT_RV = sum((Time-mean(Time)).^2);
             EtT_RVxSpeed = sum(((Time-mean(Time)).*V).^2);
-
+            
             CellTypeT_RV = (EtT_RV-EsT_RV)/(EtT_RV+EsT_RV); % -1 for Time Cell, +1 for Place Cell
-                    
+            
             [fitDistVel,S] = polyfit(V(O),Distance(O),1); % Linear regression between the OnSet distance and the velocity
             [RegDistVel,] = polyval(fitDistVel,V,1); % Estimation of distance based on velocity
             [RegDistVel1,] = polyval(fitDistVel,[0:MxTime],1); % Estimation of distance based on velocity, entire range
@@ -601,14 +685,14 @@ for n=nStart:nStop % Run through all neurons
             end
             mdlS_V = fitlm(V,Distance);
             eval(strcat(filename(1:4),filename(6:end),'{',int2str(n),'}.SV=mdlS_V;'));
-
+            
             m = mdlS_V.Coefficients.Estimate(2); % regression coefficient
             m0 = mdlS_V.Coefficients.Estimate(1); % regression constant
             EtS_V = sum((m*V-Distance+m0).^2); % Residuals
             EsS_V = sum((Distance-mean(Distance)).^2); % Residuals
             EsS_VxSpeed = sum(((Distance-mean(Distance))./V).^2); % Residuals
-
-            CellTypeS_V = (EtS_V-EsS_V)/(EtS_V+EsS_V); % -1 for Time Cell, +1 for Place Cell          
+            
+            CellTypeS_V = (EtS_V-EsS_V)/(EtS_V+EsS_V); % -1 for Time Cell, +1 for Place Cell
             
             % Sort the residual errors by runs order and make a linear regression
             TimeResid = abs(RegTimeRVel-OnSetPos(Rx));
@@ -632,7 +716,7 @@ for n=nStart:nStop % Run through all neurons
             FitD(n) = fitTimeRVel(1); %  Regression coefficient of Time vs 1/Velocity
             RMS(n) = S.normr/sqrt(ValidRuns); % RMS error of Onset distance estimation
             MTime(n) = mean(Time); % Average Onset time
-            [M,MPos] = max(OnSetPos); % Maximum OnSet 
+            [M,MPos] = max(OnSetPos); % Maximum OnSet
             MaxOnset(n) = M*TimeResolution; % Maximum OnSet time
             MaxOnsetDistance(n) = MaxOnset(n)*tm.Speed(MPos); % Maximum OnSet Distance
             MDist(n) = mean(Distance); % Average Onset distance
@@ -646,12 +730,15 @@ for n=nStart:nStop % Run through all neurons
             R2S_V(n) = round(mdlS_V.Rsquared.Ordinary,2); % R2
             PS_V(n) = round(mdlS_V.Coefficients.pValue(2),2); % P value
             Es_S_V(n) = EsS_V;
-            Et_S_V(n) = EtS_V;            
+            Et_S_V(n) = EtS_V;
             Es_S_VxSpeed(n) = EsS_VxSpeed;
-            CellS_V(n) = round(CellTypeS_V,2); % 
-            PeakFiringRateL(n)=PeakFiringRate(1);
-            PeakFiringRateM(n)=PeakFiringRate(2);
-            PeakFiringRateH(n)=PeakFiringRate(3);
+            CellS_V(n) = round(CellTypeS_V,2); %
+            PeakTimeFiringRateL(n)=PeakTimeFiringRate(1);
+            PeakTimeFiringRateM(n)=PeakTimeFiringRate(2);
+            PeakTimeFiringRateH(n)=PeakTimeFiringRate(3);
+            PeakDistanceFiringRateL(n)=PeakDistanceFiringRate(1);
+            PeakDistanceFiringRateM(n)=PeakDistanceFiringRate(2);
+            PeakDistanceFiringRateH(n)=PeakDistanceFiringRate(3);
             
             R2T_RV(n) = round(mdlT_RV.Rsquared.Ordinary,2); % R2
             PT_RV(n) = round(mdlT_RV.Coefficients.pValue(2),2); % P value
@@ -659,10 +746,20 @@ for n=nStart:nStop % Run through all neurons
             Et_T_RV(n) = EtT_RV;
             Es_T_RV(n) = EsT_RV;
             Et_T_RVxSpeed(n) = EtT_RVxSpeed;
-           
+            
+            PlaceCell = mdlT_RV.Coefficients.pValue(2)<0.05;
+            TimeCell = mdlS_V.Coefficients.pValue(2)<0.05;
+            if PlaceCell && ~TimeCell
+                disp('Place Cell (p-value)');
+            end
+            if ~PlaceCell && TimeCell
+                disp('Time Cell (p_value)');
+            end
+            
+            
             R2Err(n) = round(mdlDistanceErr.Rsquared.Ordinary,2); % R2
             PErr(n) = round(mdlDistanceErr.Coefficients.pValue(2),2); % P value
-                       
+            
             FiringTimeImage = (SortedAllFiringTimeHR>0)*1;
             FiringDistanceImage = (SortedAllFiringDistanceHR>0)*1;
             
@@ -687,14 +784,14 @@ for n=nStart:nStop % Run through all neurons
             end
             FiringTimeImage = FiringTimeImage+1; % Backgound >0
             FiringDistanceImage = FiringDistanceImage+1; % Backgound >0
-                       
+            
             switch FigureFormat
                 case 1
                     ax = subplot(4,3,1);
                 case 2
                     ax = subplot(4,2,1);
                 case 3
-                    ax = subplot(4,1,1);
+                    ax = subplot(4,TotalCol,Col);
             end
             
             if FigureFormat<=3
@@ -706,11 +803,8 @@ for n=nStart:nStop % Run through all neurons
                 ax.FontSize = NumFntSize;
                 ax.YDir = 'reverse';
                 box(ax,'off')
-%                 title("\fontsize{"+num2str(FntSize)+"}Firing rate per time, sorted by Velocity");
-                if Titles
-                    ylabel("\fontsize{"+num2str(FntSize)+"}Sorted Run#"+newline);
-                    xlabel("\fontsize{"+num2str(FntSize)+"}Sec"+newline);
-                end
+                %                 title("\fontsize{"+num2str(FntSize)+"}Firing rate per time, sorted by Velocity");
+                
                 ax.FontSize = NumFntSize;
                 ax.XTick = [0 40];
                 ax.YTick = [0 Runs];
@@ -718,6 +812,12 @@ for n=nStart:nStop % Run through all neurons
                 plot((tm.stop(SpeedOrder)-tm.start(SpeedOrder)),(1:Runs),'color',[0.2 0.2 0.2],'LineStyle','--','LineWidth',1); % The treadmill end time
                 plot((tm.stop(SpeedOrder)-tm.start(SpeedOrder)+ExtraTime),(1:Runs),'color',[0 0 0],'LineStyle',':','LineWidth',1); % The treadmill end time + ExtraTime
                 hold off;
+                if Titles
+                    if Col==1
+                        ylabel("Sorted Run#",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                    end
+                    xlabel("Sec",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                end
             end
             
             switch FigureFormat
@@ -726,9 +826,9 @@ for n=nStart:nStop % Run through all neurons
                 case 2
                     ax = subplot(4,2,2);
                 case 3
-                    ax = subplot(4,1,1);
+                    ax = subplot(4,TotalCol,Col);
             end
-                       
+            
             if FigureFormat<3
                 image([0 MxDistance],[],FiringDistanceImage);
                 cmap = [ 1 1 1; 0 0 0.9 ; 0.9 0 0; 1 0.9 0; 0 0 0];
@@ -738,14 +838,16 @@ for n=nStart:nStop % Run through all neurons
                 ax.YDir = 'reverse';
                 box(ax,'off')
                 if Titles
-                    ylabel("\fontsize{"+num2str(FntSize)+"}Sorted Run#"+newline);
+                    if Col==1
+                        ylabel("\fontsize{"+num2str(FntSize)+"}Sorted Run#"+newline);
+                    end
                     xlabel("\fontsize{"+num2str(FntSize)+"}Cm"+newline);
                 end
                 hold on;
                 plot((tm.stop(SpeedOrder)-tm.start(SpeedOrder)).*tm.Speed(SpeedOrder),(1:Runs),'green'); % The treadmill end time
                 hold off;
             end
-     
+            
             switch FigureFormat
                 case 1
                     ax = subplot(4,3,4);
@@ -753,33 +855,37 @@ for n=nStart:nStop % Run through all neurons
                     ax = subplot(4,2,3);
                 case 3
                     if SessionType==2
-                        ax = subplot(4,1,2);
+                        ax = subplot(4,TotalCol,Col+TotalCol);
                     else
-                        ax = subplot(4,1,2);
+                        ax = subplot(4,TotalCol,Col+TotalCol);
                     end
             end
             
             if FigureFormat<=3
                 plot(FiringTimePerSpeedGroups.','LineWidth',3);
                 set(gca,'ColorOrder',[0 0 0.5; 0.5 0 0; 0 0.5 0]);
-                axis([0 80 0 round(1+max(FiringTimePerSpeedGroups(:)))]);
+                axis([0 40/TimeResolution 0 round(1+max(FiringTimePerSpeedGroups(:)))]);
                 ax = gca;
                 ax.FontSize = NumFntSize;
                 box(ax,'off');
-                ax.XTick = [0 80];
+                ax.XTick = [0 40/TimeResolution];
                 ax.XTickLabels = [0 40];
                 ax.YTick = [0 round(1+max(FiringTimePerSpeedGroups(:)))];
                 if Titles
-                    ylabel("\fontsize{"+num2str(FntSize)+"}Firing rate (Hz)"+newline);
-                    xlabel("\fontsize{"+num2str(FntSize)+"}Sec"+newline);
+                    if Col==1
+                        %                         ylabel("Firing rate (Hz)",'Position',[-30 3.5 -1.0],'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                        ylabel("Firing rate (Hz)",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                    end
+                    xlabel("Sec",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
                 end
                 if SessionType ==2 && FigureFormat~=2 && ShowPks ==1
                     text(plocs1(:)+10,pks1(:),strcat(num2str(pks1(:),2),' Hz'),'color','blue');
                     text(plocs2(:)+10,pks2(:),strcat(num2str(pks2(:),2),' Hz'),'color','red');
                     text(plocs3(:)+10,pks3(:),strcat(num2str(pks3(:),2),' Hz'),'color','yellow');
                 end
+                title([num2str(max(FiringTimePerSpeedGroups(:)),2) 'hz'],'FontSize',10); % Maximum firing rate
             end
-                        
+            
             switch FigureFormat
                 case 1
                     ax = subplot(4,3,5);
@@ -787,31 +893,35 @@ for n=nStart:nStop % Run through all neurons
                     ax = subplot(4,2,4);
                 case 3
                     if SessionType==2
-                        ax = subplot(4,1,3);
+                        ax = subplot(4,TotalCol,Col+2*TotalCol);
                     else
-                        ax = subplot(4,1,3);
+                        ax = subplot(4,TotalCol,Col+2*TotalCol);
                     end
             end
             
             if FigureFormat<=3
                 plot(FiringDistancePerSpeedGroups.','LineWidth',3);
                 set(gca,'ColorOrder',[0 0 0.5; 0.5 0 0; 0 0.5 0]);
-                axis([0 120 0 round(1+max(FiringDistancePerSpeedGroups(:)))]);
+                axis([0 1200/DistanceResolution 0 round(1+max(FiringDistancePerSpeedGroups(:)))]);
                 ax.YTick = [0 round(1+max(FiringDistancePerSpeedGroups(:)))];
-                set(gca,'XTick',[0 120]);
+                set(gca,'XTick',[0 1200/DistanceResolution]);
                 set(gca,'XTickLabels',[0 1200],'FontSize',FntSize);
                 ax = gca;
                 ax.FontSize = NumFntSize;
                 box(ax,'off')
                 if Titles
-                    xlabel("\fontsize{"+num2str(FntSize)+"}Cm"+newline);
-                    ylabel("\fontsize{"+num2str(FntSize)+"}Firing rate (Hz)"+newline);
+                    if Col==1
+                        %                         ylabel("Firing rate (Hz)",'Position',[-48 3 -1.0],'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                        ylabel("Firing rate (Hz)",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                    end
+                    xlabel("Cm",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
                 end
                 if SessionType ==1 && FigureFormat~=2 && ShowPks ==1
                     text(plocs1(:)+10,pks1(:),strcat(num2str(pks1(:),2),' Hz'),'color','blue');
                     text(plocs2(:)+10,pks2(:),strcat(num2str(pks2(:),2),' Hz'),'color','red');
                     text(plocs3(:)+10,pks3(:),strcat(num2str(pks3(:),2),' Hz'),'color','yellow');
                 end
+                title([num2str(max(FiringDistancePerSpeedGroups(:)),2) 'hz'],'FontSize',10); % Maximum firing rate
             end
             
             switch FigureFormat
@@ -820,18 +930,20 @@ for n=nStart:nStop % Run through all neurons
                 case 2
                     ax = subplot(4,2,5);
                 case 3
-                    ax = subplot(4,1,4);
+                    ax = subplot(4,TotalCol,Col+TotalCol*3);
             end
-                       
+            
             FirstOnsetByVelocity = zeros(max(Vround)-min(Vround)+1,size(FirstOnset,2));
             
+            se = strel('line', 3, 0);
             for k = 1:ValidRuns
                 indx = round(V(k)*Vres)-min(Vround)+1; % index by the velocity of the k Run
-                FirstOnsetByVelocity(indx,:)= FirstOnsetByVelocity(indx,:) + FirstOnset(Rx(k),:);
+                FirstOnsetByVelocity(indx,:)= FirstOnsetByVelocity(indx,:) + imdilate(FirstOnset(Rx(k),:),se); % Dilate the vector to improve visibility
             end
             
             if FigureFormat<=3
                 cla;
+%                 plot(OnSetPos(Rx)/5,round(V)*Vres,'.r');
                 image([0 MxTime],[min(Vround/Vres) max(Vround/Vres)],2*FirstOnsetByVelocity(:,:)); % Raster map of Onset bin sorted by 1/velocities order
                 cmap = [ 1 1 1; 0.9 0.9 0.9 ; 1 0 0];
                 colormap(ax, cmap);
@@ -840,13 +952,17 @@ for n=nStart:nStop % Run through all neurons
                 ax.FontSize = NumFntSize;
                 ax.YDir = 'reverse';
                 box(ax,'off')
-                if Titles
-                    xlabel("\fontsize{"+num2str(FntSize)+"}Sec"+newline);
-                    ylabel("\fontsize{"+num2str(FntSize)+"}Velocity (Cm/Sec)"+newline);
-                end
+                
                 ax.XTick = [0 MxTime];
                 ax.XTickLabels = [0 MxTime];
                 ax.YTick = [floor(min(Vround/Vres)) ceil(max(Vround/Vres)+1)];
+                
+                if Titles
+                    if Col==1
+                        ylabel("Velocity (Cm/Sec)",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                    end
+                    xlabel("Sec",'VerticalAlignment','bottom','Fontsize',12,'FontWeight','bold');
+                end
                 hold on;
                 plot(200*Vres./Vround,Vround/Vres,'blue'); % A curve representing the time to readh 200cm distance for each run
                 plot(600*Vres./Vround,Vround/Vres,'blue'); % A curve representing the time to readh 600cm distance for each run
@@ -855,7 +971,7 @@ for n=nStart:nStop % Run through all neurons
                 plot(1800*Vres./Vround,Vround/Vres,'blue'); % A curve representing the time to readh 1800cm distance for each run
                 plot((tm.stop(SpeedOrder)-tm.start(SpeedOrder)),tm.Speed(SpeedOrder),'color',[0.5 0.5 0.5],'LineStyle','--','LineWidth',1); % The treadmill end time
                 plot(AnalyzedTime(SpeedOrder),tm.Speed(SpeedOrder),'color',[0.3 0.3 0.3],'LineStyle',':'); % The treadmill end time + ExtraTime
-                                
+                
                 [RegTimeRVel3,] = polyval(fitTimeRVel,Vres./Vround,1); % Estimation of time based on 1/velocity, entire range
                 plot(RegTimeRVel3,Vround/Vres,'black'); % Estimated Onset based on regression
                 hold off;
@@ -867,7 +983,7 @@ for n=nStart:nStop % Run through all neurons
                 case 2
                     ax = subplot(4,2,6);
             end
-                        
+            
             if FigureFormat<3
                 image([0 MxDistance],[],0*FirstOnset); %
                 cmap = [ 1 1 1; 0.9 0.9 0.9 ; 1 0 0];
@@ -889,15 +1005,17 @@ for n=nStart:nStop % Run through all neurons
                 case 2
                     ax = subplot(4,2,7);
             end
-
-            if FigureFormat<3               
+            
+            if FigureFormat<3
                 scatter(Rv,Distance,'x','black');
                 ax = gca;
                 ax.FontSize = NumFntSize;
                 box(ax,'off')
                 if Titles
+                    if COl==1
+                        ylabel("\fontsize{"+num2str(FntSize)+"}(Sec (Cm)");
+                    end
                     xlabel("\fontsize{"+num2str(FntSize)+"}Velocity (Cm/sec)");
-                    ylabel("\fontsize{"+num2str(FntSize)+"}Distance (Cm)");
                 end
                 hold on;
                 %             scatter(Rv(~O),Distance(~O),'x','red'); % show outliers in red
@@ -915,7 +1033,7 @@ for n=nStart:nStop % Run through all neurons
                 case 2
                     ax = subplot(4,2,8);
             end
-                       
+            
             if FigureFormat<3
                 hold on;
                 scatter(1./V,Time,'x','black');
@@ -933,29 +1051,42 @@ for n=nStart:nStop % Run through all neurons
                 hold off;
             end
             
-            if FigureFormat~=4 % Save only figures with significant pValue 
+            if FigureFormat~=4 % Save only figures with significant pValue
                 PlaceCell = mdlT_RV.Coefficients.pValue(2)<0.05;
                 TimeCell = mdlS_V.Coefficients.pValue(2)<0.05;
                 Both = TimeCell & PlaceCell;
                 if Both
-                    saveas(figure(1),strcat('MBoth-',filename,'_N',int2str(n),'#2',FigureType));
+                    saveas(fig,strcat('MBoth-',filename,'_N',int2str(n),'#2',FigureType));
                 else if TimeCell  % Time Cell
-                        saveas(figure(1),strcat('MTime-',filename,'_N',int2str(n),'#2',FigureType));
+                        saveas(fig,strcat('MTime-',filename,'_N',int2str(n),'#2',FigureType));
                     else if PlaceCell  % Place Cell
-                            saveas(figure(1),strcat('MPlace=',filename,'_N',int2str(n),'#2',FigureType));
+                            saveas(fig,strcat('MPlace=',filename,'_N',int2str(n),'#2',FigureType));
                         else
-                            saveas(figure(1),strcat('M',filename,'_N',int2str(n),'#2',FigureType));
+                            saveas(fig,strcat('M',filename,'_N',int2str(n),'#2',FigureType));
                         end
                     end
                 end
             end
             
         end
+    end % Validity condition
+    SumAvg=0;
+    cnt=0;
+    for j=1:size(Spk,2)
+        if ~isempty(Spk(n,i).Avg)
+            cnt=cnt+1;
+            SumAvg = SumAvg + Spk(n,i).Avg;
+        end
     end
-end
+    MeanFiringRate(n) = SumAvg/cnt;
+end % Neurons loop
+
+
 
 fprintf('Rejected Cells = %d \n',RejectedCells);
-R = [TRuns.',VRuns.',ValidRunsLeftTurns.',ValidRunsRightTurns.',FitT.', FitD.', RMS.',MTime.',MaxOnset.',MDist.',MaxOnsetDistance.',NSumAbsResid.',R2S_V.',PS_V.',CellS_V.',Et_S_V.',Es_S_V.',Es_S_VxSpeed.',R2T_RV.',PT_RV.',CellT_RV.',Et_T_RV.',Es_T_RV.',Et_T_RVxSpeed.',ErrSlope.',R2Err.',PErr.',PeakFiringRateL.',PeakFiringRateM.',PeakFiringRateH.'];
+R = [TRuns.',VRuns.',ValidRunsLeftTurns.',ValidRunsRightTurns.',FitT.', FitD.', RMS.',MTime.',MaxOnset.',MDist.',MaxOnsetDistance.',NSumAbsResid.'...
+    ,R2S_V.',PS_V.',CellS_V.',Et_S_V.',Es_S_V.',Es_S_VxSpeed.',R2T_RV.',PT_RV.',CellT_RV.',Et_T_RV.',Es_T_RV.',Et_T_RVxSpeed.',ErrSlope.',R2Err.',...
+    PErr.',PeakTimeFiringRateL.',PeakTimeFiringRateM.',PeakTimeFiringRateH.',PeakDistanceFiringRateL.',PeakDistanceFiringRateM.',PeakDistanceFiringRateH.',MeanFiringRate'];
 save(strcat('mdls_',filename),strcat(filename(1:4),filename(6:end)));
 
 
@@ -966,13 +1097,13 @@ function [r2 rmse] = rsquare(y,f,varargin)
 % [r2 rmse] = rsquare(y,f,c)
 %
 % RSQUARE computes the coefficient of determination (R-square) value from
-% actual data Y and model data F. The code uses a general version of 
-% R-square, based on comparing the variability of the estimation errors 
+% actual data Y and model data F. The code uses a general version of
+% R-square, based on comparing the variability of the estimation errors
 % with the variability of the original values. RSQUARE also outputs the
 % root mean squared error (RMSE) for the user's convenience.
 %
 % Note: RSQUARE ignores comparisons involving NaN values.
-% 
+%
 % INPUTS
 %   Y       : Actual data
 %   F       : Model fit
@@ -985,7 +1116,7 @@ function [r2 rmse] = rsquare(y,f,varargin)
 %            FALSE : Uses alternate R-square computation for model
 %                    without constant term [R2 = 1 - NORM(Y-F)/NORM(Y)]
 %
-% OUTPUT 
+% OUTPUT
 %   R2      : Coefficient of determination
 %   RMSE    : Root mean squared error
 %
@@ -998,7 +1129,7 @@ function [r2 rmse] = rsquare(y,f,varargin)
 %   figure; plot(x,y,'b-');
 %   hold on; plot(x,f,'r-');
 %   title(strcat(['R2 = ' num2str(r2) '; RMSE = ' num2str(rmse)]))
-%   
+%
 % Jered R Wells
 % 11/17/11
 % jered [dot] wells [at] duke [dot] edu
@@ -1008,10 +1139,10 @@ function [r2 rmse] = rsquare(y,f,varargin)
 % Thanks to John D'Errico for useful comments and insight which has helped
 % to improve this code. His code POLYFITN was consulted in the inclusion of
 % the C-option (REF. File ID: #34765).
-if isempty(varargin); c = true; 
+if isempty(varargin); c = true;
 elseif length(varargin)>1; error 'Too many input arguments';
 elseif ~islogical(varargin{1}); error 'C must be logical (TRUE||FALSE)'
-else c = varargin{1}; 
+else c = varargin{1};
 end
 % Compare inputs
 if ~all(size(y)==size(f)); error 'Y and F must be the same size'; end
@@ -1022,7 +1153,7 @@ f = f(tmp);
 if c; r2 = max(0,1 - sum((y(:)-f(:)).^2)/sum((y(:)-mean(y(:))).^2));
 else r2 = 1 - sum((y(:)-f(:)).^2)/sum((y(:)).^2);
     if r2<0
-    % http://web.maths.unsw.edu.au/~adelle/Garvan/Assays/GoodnessOfFit.html
+        % http://web.maths.unsw.edu.au/~adelle/Garvan/Assays/GoodnessOfFit.html
         warning('Consider adding a constant term to your model') %#ok<WNTAG>
         r2 = 0;
     end

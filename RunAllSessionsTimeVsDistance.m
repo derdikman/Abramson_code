@@ -12,14 +12,14 @@ function RunAllSessionsTimeVsDistance
     R4 = NeuronFiringTimeVsDistance('bk33-0723',0);
     R5 = NeuronFiringTimeVsDistance('bk35-0827',0);
     R6 = NeuronFiringTimeVsDistance('bk41-0317',0);
-    R7 = NeuronFiringTimeVsDistance('bk41-0406',0);
-    R8 = NeuronFiringTimeVsDistance('bk49-0217',0);
+    R7 = NeuronFiringTimeVsDistance('bk41-0406',0);  % Transition from fixed time to fixed distance
+    R8 = NeuronFiringTimeVsDistance('bk49-0217',0);  % Transition from fixed time to fixed distance
     R9 = NeuronFiringTimeVsDistance('bk49-0222',0);
     
     % Fixed time trials (16 sec)
-    R10 = NeuronFiringTimeVsDistance('bk35-0831',0);
+    R10 = NeuronFiringTimeVsDistance('bk35-0831',0); % Transition from fixed distance to fixed time
     R11 = NeuronFiringTimeVsDistance('bk35-0902',0);
-    R12 = NeuronFiringTimeVsDistance('bk41-0325',0);
+    R12 = NeuronFiringTimeVsDistance('bk41-0325',0); % Transition from fixed distance to fixed time
     R13 = NeuronFiringTimeVsDistance('bk41-0331',0);
     R14 = NeuronFiringTimeVsDistance('bk45-0803',0);
     R15 = NeuronFiringTimeVsDistance('bk45-0812',0);
